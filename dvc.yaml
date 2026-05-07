@@ -1,0 +1,40 @@
+stages:
+  preprocess:
+    cmd: python src/preprocess.py
+    deps:
+      - data/raw/dataset.csv
+      - src/preprocess.py
+    params:
+      - data.test_size
+      - data.random_state
+    outs:
+      - data/processed/X_train.csv
+      - data/processed/X_test.csv
+      - data/processed/y_train.csv
+      - data/processed/y_test.csv
+
+  train:
+    cmd: python src/train.py
+    deps:
+      - data/processed/X_train.csv
+      - data/processed/y_train.csv
+      - src/train.py
+    params:
+      - random_forest
+      - xgboost
+      - lightgbm
+    outs:
+      - models/
+
+  evaluate:
+    cmd: python src/evaluate.py
+    deps:
+      - data/processed/X_test.csv
+      - data/processed/y_test.csv
+      - models/
+      - src/evaluate.py
+    params:
+      - promotion
+    metrics:
+      - reports/metrics.json:
+          cache: false

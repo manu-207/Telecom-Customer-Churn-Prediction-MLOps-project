@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  # MLflow Tracking Server
+  mlflow-server:
+    image: python:3.11-slim
+    command: >
+      bash -c "pip install mlflow &&
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri sqlite:///mlflow.db
+      --default-artifact-root /mlflow/artifacts"
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-data:/mlflow
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ChurnGuard Prediction API
+  churnguard-api:
+    build: .
+    ports:
+      - "5001:5001"
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow-server:5000
+      - API_PORT=5001
+    depends_on:
+      - mlflow-server
+    restart: unless-stopped
+
+  # Training pipeline (run on-demand)
+  trainer:
+    build: .
+    command: >
+      bash -c "python src/preprocess.py &&
+      python src/train.py &&
+      python src/evaluate.py"
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow-server:5000
+    depends_on:
+      - mlflow-server
+    volumes:
+      - ./data:/app/data
+    profiles:
+      - train
+
+volumes:
+  mlflow-data:

@@ -1,0 +1,37 @@
+# Data
+data:
+  raw_path: data/raw/dataset.csv
+  test_size: 0.2
+  random_state: 42
+
+# Model hyperparameters
+random_forest:
+  n_estimators: 200
+  max_depth: 10
+  min_samples_split: 5
+  random_state: 42
+
+xgboost:
+  n_estimators: 200
+  max_depth: 6
+  learning_rate: 0.1
+  subsample: 0.8
+  colsample_bytree: 0.8
+  random_state: 42
+
+lightgbm:
+  n_estimators: 200
+  max_depth: 8
+  learning_rate: 0.1
+  num_leaves: 31
+  subsample: 0.8
+  random_state: 42
+
+# Promotion thresholds
+promotion:
+  metric: f1_score
+  min_improvement: 0.01  # challenger must beat champion by at least 1%
+  metrics_weights:
+    accuracy: 0.3
+    f1_score: 0.4
+    roc_auc: 0.3
