@@ -80,7 +80,7 @@ jobs:
         run: mkdir -p reports
 
       - name: Pull data from DVC
-        run: dvc pull
+        run: dvc pull --force
 
       # dvc repro runs: preprocess → train → evaluate → monitor
       - name: Run DVC Pipeline
