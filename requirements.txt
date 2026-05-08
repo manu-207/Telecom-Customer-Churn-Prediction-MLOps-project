@@ -11,6 +11,7 @@ pyyaml>=6.0.0
 flask>=3.0.0
 gunicorn>=22.0.0
 flake8>=7.0.0
+python-dotenv>=1.0.0
 dvc-s3
 prometheus-flask-exporter   
 prometheus-client  
