@@ -3,11 +3,18 @@ Airflow DAG: Champion/Challenger MLOps Pipeline
 Orchestrates: preprocess -> train (3 models) -> evaluate -> promote
 """
 
+import os
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.bash import BashOperator
+from dotenv import load_dotenv
 
+load_dotenv()
+
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI")
+EXPERIMENT_NAME = os.getenv("EXPERIMENT_NAME")
+MODEL_NAME = os.getenv("MODEL_NAME")
 
 default_args = {
     "owner": "mlops-team",
@@ -44,12 +51,14 @@ with DAG(
     train_models = BashOperator(
         task_id="train_models",
         bash_command="cd /opt/airflow/project && python src/train.py",
+        env={"MLFLOW_TRACKING_URI": MLFLOW_TRACKING_URI},
     )
 
     # Stage 4: Evaluate and auto-promote
     evaluate_promote = BashOperator(
         task_id="evaluate_and_promote",
         bash_command="cd /opt/airflow/project && python src/evaluate.py",
+        env={"MLFLOW_TRACKING_URI": MLFLOW_TRACKING_URI},
     )
 
     # Stage 5: Notify (optional)
