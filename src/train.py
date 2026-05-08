@@ -16,10 +16,13 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
+from dotenv import load_dotenv
 
+load_dotenv()
 
-EXPERIMENT_NAME = "champion_challenger_experiment"
-MODEL_NAME = "multi_model_classifier"
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI")
+EXPERIMENT_NAME = os.getenv("EXPERIMENT_NAME")
+MODEL_NAME = os.getenv("MODEL_NAME")
 
 
 def load_params(params_path: str = "params.yaml") -> dict:
@@ -125,6 +128,7 @@ def main():
     """Train all 3 models and register in MLflow."""
     params = load_params()
 
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment(EXPERIMENT_NAME)
     print(f"MLflow experiment: {EXPERIMENT_NAME}")
 
