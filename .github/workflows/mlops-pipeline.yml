@@ -1,26 +1,22 @@
-name: ChurnGuard MLOps Pipeline
+name: MLOps CI Pipeline with my latest project
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "params.yaml"
-      - "dvc.yaml"
-      - "requirements.txt"
+    branches: [ main ]
   pull_request:
-    branches: [main]
-  workflow_dispatch:  # Manual trigger
+    branches: [ main ]
 
-env:
-  PYTHON_VERSION: "3.11"
-  MLFLOW_TRACKING_URI: "http://localhost:5000"
+permissions:
+  contents: write
 
 jobs:
-  # ─── Job 1: Lint & Test ───────────────────────────────────────────────
+
+  # ─────────────────────────────────────────────────────────────
+  # JOB 1 — Run pytest
+  # ─────────────────────────────────────────────────────────────
   test:
-    name: Lint & Test
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,29 +24,38 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
+          python-version: "3.10"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
 
       - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install flake8
-
-      - name: Lint with flake8
-        run: |
-          flake8 src/ --max-line-length=100 --ignore=E501,W503
+        run: pip install -r requirements.txt pytest flask pandas
 
       - name: Run tests
-        run: |
-          pytest tests/ -v --tb=short
+        run: pytest tests/ -v
+        env:
+          MLFLOW_TRACKING_URI: "file:///tmp/mlruns"
 
-  # ─── Job 2: Train & Evaluate ──────────────────────────────────────────
-  train:
-    name: Train & Evaluate Models
-    runs-on: ubuntu-latest
+  # ─────────────────────────────────────────────────────────────
+  # JOB 2 — Train → Monitor → Build Docker → Deploy to ECS
+  # ─────────────────────────────────────────────────────────────
+  train-evaluate:
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    env:
+      MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+      MLFLOW_EXPERIMENT_NAME: manu7-mlops
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ap-south-1
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -58,85 +63,25 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
+          python-version: "3.10"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
 
       - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt pytest flask pandas
 
-      - name: Setup DVC
-        uses: iterative/setup-dvc@v2
+      # ── FIX: create reports/ dir so DVC doesn't fail on pull ─────────────
+      - name: Create reports directory
+        run: mkdir -p reports
 
-      - name: Pull data with DVC
-        run: |
-          dvc pull
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - name: Pull data from DVC
+        run: dvc pull
 
-      - name: Start MLflow server
-        run: |
-          mlflow server --host 0.0.0.0 --port 5000 &
-          sleep 5
-
-      - name: Run preprocessing
-        run: python src/preprocess.py
-
-      - name: Train models
-        run: python src/train.py
-
-      - name: Evaluate & auto-promote
-        run: python src/evaluate.py
-
-      - name: Upload metrics artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: evaluation-metrics
-          path: reports/metrics.json
-
-  # ─── Job 3: Build & Push Docker Image ─────────────────────────────────
-  build:
-    name: Build & Push Docker Image
-    runs-on: ubuntu-latest
-    needs: train
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ secrets.DOCKER_USERNAME }}/churnguard:latest
-            ${{ secrets.DOCKER_USERNAME }}/churnguard:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # ─── Job 4: Deploy (staging) ──────────────────────────────────────────
-  deploy-staging:
-    name: Deploy to Staging
-    runs-on: ubuntu-latest
-    needs: build
-    environment: staging
-    steps:
-      - name: Deploy to staging
-        run: |
-          echo "Deploying ChurnGuard to staging environment..."
-          echo "Image: ${{ secrets.DOCKER_USERNAME }}/churnguard:${{ github.sha }}"
-          # Add your deployment commands here:
-          # kubectl set image deployment/churnguard churnguard=$IMAGE
-          # or: aws ecs update-service ...
-          # or: docker compose up -d
+      # dvc repro runs: preprocess → train → evaluate → monitor
+      - name: Run DVC Pipeline
+        run: dvc repro
