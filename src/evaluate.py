@@ -4,12 +4,18 @@ Compares all registered model versions, selects the best challenger,
 and triggers auto-promotion if it beats the current champion.
 """
 
+import os
 import json
 import yaml
 import mlflow
 from mlflow.tracking import MlflowClient
+from dotenv import load_dotenv
 
-MODEL_NAME = "multi_model_classifier"
+load_dotenv()
+
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI")
+EXPERIMENT_NAME = os.getenv("EXPERIMENT_NAME")
+MODEL_NAME = os.getenv("MODEL_NAME")
 REGISTERED_MODELS = [
     f"{MODEL_NAME}_rf",
     f"{MODEL_NAME}_xgb",
@@ -88,6 +94,8 @@ def evaluate_and_promote() -> dict:
     weights = promotion_params["metrics_weights"]
     min_improvement = promotion_params["min_improvement"]
 
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    mlflow.set_experiment(EXPERIMENT_NAME)
     client = MlflowClient()
 
     print("=" * 60)
