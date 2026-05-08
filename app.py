@@ -14,10 +14,13 @@ from flask import Flask, request, jsonify
 import pandas as pd
 import mlflow
 import mlflow.pyfunc
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Configuration
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
-MODEL_NAME_PREFIX = "multi_model_classifier"
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI")
+MODEL_NAME_PREFIX = os.getenv("MODEL_NAME")
 REGISTERED_MODELS = [
     f"{MODEL_NAME_PREFIX}_rf",
     f"{MODEL_NAME_PREFIX}_xgb",
