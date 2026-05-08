@@ -51,7 +51,8 @@ jobs:
 
     env:
       MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
-      MLFLOW_EXPERIMENT_NAME: manu7-mlops
+      EXPERIMENT_NAME: champion_challenger_experiment
+      MODEL_NAME: multi_model_classifier
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: ap-south-1
@@ -75,13 +76,20 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt pytest flask pandas
 
-      # ── FIX: create reports/ dir so DVC doesn't fail on pull ─────────────
-      - name: Create reports directory
-        run: mkdir -p reports
+      # ── Pull all DVC-tracked data from S3 ─────────────────────────────────
+      - name: Create required directories
+        run: |
+          mkdir -p reports
+          mkdir -p data/processed
+          mkdir -p models
 
-      - name: Pull data from DVC
+      - name: Pull data and models from DVC
         run: dvc pull --force
 
-      # dvc repro runs: preprocess → train → evaluate → monitor
+      # dvc repro only re-runs stages where dependencies changed
       - name: Run DVC Pipeline
         run: dvc repro
+
+      # Push new outputs back to S3 (if pipeline produced new artifacts)
+      - name: Push outputs to DVC remote
+        run: dvc push
