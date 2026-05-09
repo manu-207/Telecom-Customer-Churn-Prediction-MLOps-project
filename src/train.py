@@ -154,6 +154,7 @@ def main():
     with open("reports/training_results.json", "w") as f:
         json.dump(results, f, indent=2)
 
+    os.makedirs("models", exist_ok=True)
     print("\nAll models trained and registered in MLflow!")
     return results
 
