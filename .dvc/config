@@ -1,0 +1,6 @@
+[cache]
+    dir = C:\Users\bmanm\.dvc\cache
+[core]
+    remote = myremote
+['remote "myremote"']
+    url = s3://manu-mlops-bucket
