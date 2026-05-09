@@ -1,95 +1,163 @@
-name: MLOps CI Pipeline with my mlops project
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-permissions:
-  contents: write
-jobs:
-  # ─────────────────────────────────────────────────────────────
-  # JOB 1 — Run pytest
-  # ─────────────────────────────────────────────────────────────
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: ${{ runner.os }}-pip-
-      - name: Install dependencies
-        run: pip install -r requirements.txt pytest flask pandas
-      - name: Run tests
-        run: pytest tests/ -v
-        env:
-          MLFLOW_TRACKING_URI: "file:///tmp/mlruns"
+"""
+Model training module.
+Trains 3 competing models (RF, XGBoost, LightGBM),
+logs all runs to MLflow, and registers each model version.
+"""
 
-  # ─────────────────────────────────────────────────────────────
-  # JOB 2 — Train → Monitor → Build Docker → Deploy to ECS
-  # ─────────────────────────────────────────────────────────────
-  train-evaluate:
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    env:
-      MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
-      EXPERIMENT_NAME: champion_challenger_experiment
-      MODEL_NAME: multi_model_classifier
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_DEFAULT_REGION: ap-south-1
-      PYTHONPATH: ${{ github.workspace }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+import os
+import yaml
+import pandas as pd
+import numpy as np
+import mlflow
+import mlflow.sklearn
+import mlflow.xgboost
+import mlflow.lightgbm
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
+from dotenv import load_dotenv
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
+load_dotenv()
 
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: ${{ runner.os }}-pip-
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI")
+EXPERIMENT_NAME = os.getenv("EXPERIMENT_NAME")
+MODEL_NAME = os.getenv("MODEL_NAME")
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt pytest flask pandas boto3
 
-      # ── Create required directories ───────────────────────────────────────
-      - name: Create required directories
-        run: |
-          mkdir -p reports
-          mkdir -p data/processed
-          mkdir -p models
+def load_params(params_path: str = "params.yaml") -> dict:
+    with open(params_path, "r") as f:
+        return yaml.safe_load(f)
 
-      # ── Pull only raw data from DVC (not models — those get rebuilt) ──────
-      - name: Pull raw data from DVC
-        run: dvc pull data/raw/dataset.csv --force
 
-      # ── Run full pipeline (always rebuilds models/ from scratch) ──────────
-      - name: Run DVC Pipeline
-        run: dvc repro --force
+def load_processed_data() -> tuple:
+    """Load preprocessed train/test splits."""
+    X_train = pd.read_csv("data/processed/X_train.csv")
+    X_test = pd.read_csv("data/processed/X_test.csv")
+    y_train = pd.read_csv("data/processed/y_train.csv").squeeze()
+    y_test = pd.read_csv("data/processed/y_test.csv").squeeze()
+    return X_train, X_test, y_train, y_test
 
-      # ── Push all new outputs (data + models) back to S3 ──────────────────
-      - name: Push outputs to DVC remote
-        run: dvc push
 
-      # ── Commit updated dvc.lock so next run has correct hashes ───────────
-      - name: Commit dvc.lock if changed
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add dvc.lock
-          git diff --staged --quiet || git commit -m "ci: update dvc.lock [skip ci]"
-          git push
+def compute_metrics(y_true, y_pred, y_proba=None) -> dict:
+    """Compute classification metrics."""
+    metrics = {
+        "accuracy": accuracy_score(y_true, y_pred),
+        "f1_score": f1_score(y_true, y_pred, average="weighted"),
+    }
+    if y_proba is not None:
+        if y_proba.ndim == 2 and y_proba.shape[1] == 2:
+            metrics["roc_auc"] = roc_auc_score(y_true, y_proba[:, 1])
+        elif y_proba.ndim == 2:
+            metrics["roc_auc"] = roc_auc_score(
+                y_true, y_proba, multi_class="ovr", average="weighted"
+            )
+    return metrics
+
+
+def train_random_forest(X_train, y_train, X_test, y_test, params: dict) -> dict:
+    """Train Random Forest and log to MLflow."""
+    with mlflow.start_run(run_name="RandomForest_Challenger") as run:
+        model = RandomForestClassifier(**params)
+        model.fit(X_train, y_train)
+
+        y_pred = model.predict(X_test)
+        y_proba = model.predict_proba(X_test)
+        metrics = compute_metrics(y_test, y_pred, y_proba)
+
+        mlflow.log_params(params)
+        mlflow.log_metrics(metrics)
+        mlflow.sklearn.log_model(
+            model,
+            artifact_path="model",
+            registered_model_name=f"{MODEL_NAME}_rf",
+        )
+
+        print(f"  RF  -> F1: {metrics['f1_score']:.4f} | Acc: {metrics['accuracy']:.4f}")
+        return {"run_id": run.info.run_id, "metrics": metrics, "model_type": "rf"}
+
+
+def train_xgboost(X_train, y_train, X_test, y_test, params: dict) -> dict:
+    """Train XGBoost and log to MLflow."""
+    with mlflow.start_run(run_name="XGBoost_Challenger") as run:
+        model = XGBClassifier(**params, eval_metric="logloss", use_label_encoder=False)
+        model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
+
+        y_pred = model.predict(X_test)
+        y_proba = model.predict_proba(X_test)
+        metrics = compute_metrics(y_test, y_pred, y_proba)
+
+        mlflow.log_params(params)
+        mlflow.log_metrics(metrics)
+        mlflow.xgboost.log_model(
+            model,
+            artifact_path="model",
+            registered_model_name=f"{MODEL_NAME}_xgb",
+        )
+
+        print(f"  XGB -> F1: {metrics['f1_score']:.4f} | Acc: {metrics['accuracy']:.4f}")
+        return {"run_id": run.info.run_id, "metrics": metrics, "model_type": "xgb"}
+
+
+def train_lightgbm(X_train, y_train, X_test, y_test, params: dict) -> dict:
+    """Train LightGBM and log to MLflow."""
+    with mlflow.start_run(run_name="LightGBM_Challenger") as run:
+        model = LGBMClassifier(**params, verbose=-1)
+        model.fit(
+            X_train, y_train,
+            eval_set=[(X_test, y_test)],
+        )
+
+        y_pred = model.predict(X_test)
+        y_proba = model.predict_proba(X_test)
+        metrics = compute_metrics(y_test, y_pred, y_proba)
+
+        mlflow.log_params(params)
+        mlflow.log_metrics(metrics)
+        mlflow.lightgbm.log_model(
+            model,
+            artifact_path="model",
+            registered_model_name=f"{MODEL_NAME}_lgbm",
+        )
+
+        print(f"  LGBM-> F1: {metrics['f1_score']:.4f} | Acc: {metrics['accuracy']:.4f}")
+        return {"run_id": run.info.run_id, "metrics": metrics, "model_type": "lgbm"}
+
+
+def main():
+    """Train all 3 models and register in MLflow."""
+    params = load_params()
+
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    mlflow.set_experiment(EXPERIMENT_NAME)
+    print(f"MLflow experiment: {EXPERIMENT_NAME}")
+
+    X_train, X_test, y_train, y_test = load_processed_data()
+    print(f"Training data: {X_train.shape}, Test data: {X_test.shape}")
+
+    print("\nTraining models...")
+    results = []
+
+    results.append(
+        train_random_forest(X_train, y_train, X_test, y_test, params["random_forest"])
+    )
+    results.append(
+        train_xgboost(X_train, y_train, X_test, y_test, params["xgboost"])
+    )
+    results.append(
+        train_lightgbm(X_train, y_train, X_test, y_test, params["lightgbm"])
+    )
+
+    # Save results summary
+    os.makedirs("reports", exist_ok=True)
+    import json
+    with open("reports/training_results.json", "w") as f:
+        json.dump(results, f, indent=2)
+
+    os.makedirs("models", exist_ok=True)
+    print("\nAll models trained and registered in MLflow!")
+    return results
+
+
+if __name__ == "__main__":
+    main()
