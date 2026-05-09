@@ -1,33 +1,28 @@
 venv/
-reports/
 .env
 
-
 # Data
-#data/raw/
-#data/processed/
+data/processed/
 
 # Models
-#models/*.pkl
-#models/*.joblib
+models/
 
 # MLflow
-#mlruns/
-#mlartifacts/
+mlruns/
+mlartifacts/
+
+# Reports
+reports/
 
 # Python
-#__pycache__/
-#*.pyc
-#*.pyo
-#.venv/
-#venv/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
 
 # DVC
-#/data/raw/*.csv
+/data/raw/*.csv
 
 # IDE
-#.idea/
-#.vscode/
-
-# Reports (generated)
-#reports/*.json
+.idea/
+.vscode/
