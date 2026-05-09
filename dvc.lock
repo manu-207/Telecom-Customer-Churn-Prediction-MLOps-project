@@ -9,8 +9,8 @@ stages:
       size: 359702
     - path: src/preprocess.py
       hash: md5
-      md5: b7c5e0882eb77098ec44ae7d3ba4dd7b
-      size: 3332
+      md5: dd31edd24de68e95490a6a5f0d0da854
+      size: 3222
     params:
       params.yaml:
         data.random_state: 42
@@ -18,17 +18,93 @@ stages:
     outs:
     - path: data/processed/X_test.csv
       hash: md5
-      md5: 47a1131beeae56cd0cdc67e3ced4e094
-      size: 238371
+      md5: c2046ba3484043e11fa04a6709806c71
+      size: 237370
     - path: data/processed/X_train.csv
       hash: md5
-      md5: 350c9f74eba3f4bddf563f3c07959a94
-      size: 953048
+      md5: de05effa74ffee8677048cb248be9e61
+      size: 949047
     - path: data/processed/y_test.csv
       hash: md5
-      md5: 7bffd322f7a79eecf20184762159f2bc
-      size: 3007
+      md5: 0bfae565a22e8d5c9f7222c12f4a65e3
+      size: 2006
     - path: data/processed/y_train.csv
       hash: md5
-      md5: 0fa85079cdc8a5f178d73a36859cd543
-      size: 12007
+      md5: e8cb2e5adb8e6a47fbe81f44bd76943c
+      size: 8006
+  train:
+    cmd: python src/train.py
+    deps:
+    - path: data/processed/X_train.csv
+      hash: md5
+      md5: de05effa74ffee8677048cb248be9e61
+      size: 949047
+    - path: data/processed/y_train.csv
+      hash: md5
+      md5: e8cb2e5adb8e6a47fbe81f44bd76943c
+      size: 8006
+    - path: src/train.py
+      hash: md5
+      md5: 14bb3d8b183cd45740f2585fdc7de2d5
+      size: 5443
+    params:
+      params.yaml:
+        lightgbm:
+          n_estimators: 200
+          max_depth: 8
+          learning_rate: 0.1
+          num_leaves: 31
+          subsample: 0.8
+          random_state: 42
+        random_forest:
+          n_estimators: 200
+          max_depth: 10
+          min_samples_split: 5
+          random_state: 42
+        xgboost:
+          n_estimators: 200
+          max_depth: 6
+          learning_rate: 0.1
+          subsample: 0.8
+          colsample_bytree: 0.8
+          random_state: 42
+    outs:
+    - path: models/
+      hash: md5
+      md5: d751713988987e9331980363e24189ce.dir
+      size: 0
+      nfiles: 0
+  evaluate:
+    cmd: python src/evaluate.py
+    deps:
+    - path: data/processed/X_test.csv
+      hash: md5
+      md5: c2046ba3484043e11fa04a6709806c71
+      size: 237370
+    - path: data/processed/y_test.csv
+      hash: md5
+      md5: 0bfae565a22e8d5c9f7222c12f4a65e3
+      size: 2006
+    - path: models/
+      hash: md5
+      md5: d751713988987e9331980363e24189ce.dir
+      size: 0
+      nfiles: 0
+    - path: src/evaluate.py
+      hash: md5
+      md5: b1495f101e2a8605dbb0eb1ba5d0f200
+      size: 5508
+    params:
+      params.yaml:
+        promotion:
+          metric: f1_score
+          min_improvement: 0.01
+          metrics_weights:
+            accuracy: 0.3
+            f1_score: 0.4
+            roc_auc: 0.3
+    outs:
+    - path: reports/metrics.json
+      hash: md5
+      md5: 0b196fb5922878e6aa529131eeddd6d5
+      size: 248
