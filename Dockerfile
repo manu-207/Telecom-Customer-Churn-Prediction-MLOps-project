@@ -1,32 +1,11 @@
-FROM python:3.11-slim
-
-LABEL maintainer="mlops-team"
-LABEL description="ChurnGuard - Multi-Model Registry with Automated Promotion"
-
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    MLFLOW_TRACKING_URI=http://mlflow-server:5000
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set working directory
+FROM python:3.10-slim
 WORKDIR /app
-
-# Copy requirements and install dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Copy project files
-COPY . .
-
-# Expose port for the Flask prediction API
+RUN pip install --no-cache-dir -r requirements.txt gunicorn
+COPY src/         ./src/
+COPY models/      ./models/
+COPY params.yaml  ./params.yaml
+COPY app.py       ./app.py
+RUN mkdir -p reports
 EXPOSE 5001
-
-# Default command: run the prediction API
-CMD ["python", "app.py"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "2", "app:app"]
